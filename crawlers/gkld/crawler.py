@@ -63,6 +63,3 @@ def scrape_website():
 
     finally:
         driver.quit()
-
-import asyncio
-asyncio.run(scrape_website())
