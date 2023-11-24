@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -21,9 +22,14 @@ def process_province_page(driver: webdriver.Chrome, province_name, page_num):
         initial_page = province_page_with_pagination,
     )
     def save_notices():
-        # extract article and save to a file
+        date = driver.find_element(By.CLASS_NAME, 'date').get_attribute('innerHTML')
+        pattern = r'\d{4}-\d{2}-\d{2}'
+        match = re.search(pattern, date)
+        date = match.group().replace('-', '_') if match else 'unknown_date'
+
         content = driver.find_element(By.CLASS_NAME, 'article-detail').get_attribute('innerHTML')
-        fileIO.write_content_to_file(f'./articles/{province_name}', f'{driver.title}.html', content)
+        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles')
+        fileIO.write_content_to_file(f'{download_dir}/{province_name}/{date}', f'{driver.title}.html', content)
 
     save_notices()
     # 关闭省份页面 
