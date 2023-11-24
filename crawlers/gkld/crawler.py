@@ -1,7 +1,10 @@
+import os
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webelement import WebElement
 
-from utilities import fileIO, flow
+from utilities import constant, fileIO, flow
 
 def process_province_page(driver: webdriver.Chrome, province_name, page_num):
     #  Jump to specific page number
@@ -9,10 +12,13 @@ def process_province_page(driver: webdriver.Chrome, province_name, page_num):
     driver.execute_script(f"window.open('{url}');")
     province_page_with_pagination = flow.switch_to_lastest_window(driver)
 
-    @flow.iterate_over_new_windows(
+    @flow.iterate_over_web_elements(
+        driver = driver,
+        selector_value = '.notice-list li a'
+    )
+    @flow.operate_in_new_window(
         driver = driver,
         initial_page = province_page_with_pagination,
-        selector_value = '.notice-list li a'
     )
     def save_notices():
         # extract article and save to a file
@@ -32,13 +38,13 @@ def scrape_website():
         homepage = driver.current_window_handle
 
         # Iterate over all the provinces
-        num_of_provinces = len(driver.find_elements(By.CLASS_NAME, 'province-name'))
-        for i in range(num_of_provinces):
-            # 重新定位省份元素, avoid StaleElementReferenceError
-            provinces = driver.find_elements(By.CLASS_NAME, 'province-name')
-            province = provinces[i]
-            province_name = province.text
-            province.click()
+        @flow.iterate_over_web_elements(
+            driver = driver,
+            selector_value = '.province-name'
+        )
+        def iterate_over_all_provinces(web_element: WebElement):
+            province_name = web_element.text
+            web_element.click()
 
             # switch to the province detail page
             province_page = flow.switch_to_lastest_window(driver)
@@ -46,12 +52,10 @@ def scrape_website():
             # 点击“公务员”前的icon-check
             driver.find_element(By.XPATH, '//i[contains(@class, "icon-check")]/following-sibling::a[contains(text(), "公务员")]').click()
 
-            # Explicitly wait
-            # WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'notice-list')))
-
             # Get the total number of pages
             totalPages = int(driver.find_element(By.XPATH, '//li[a[text()="下一页"]]/preceding-sibling::li[1]').text)
-
+            if os.environ.get('RUNNING_ENV') == constant.TEST_ENV:
+                totalPages = min(totalPages, 2)
             # 处理每个分页
             for i in range(1, totalPages + 1):
                 process_province_page(driver, province_name, i)
@@ -60,6 +64,12 @@ def scrape_website():
             # 关闭新窗口并切换回原始窗口
             driver.close()
             driver.switch_to.window(homepage)
+        
+        iterate_over_all_provinces()
 
     finally:
         driver.quit()
+
+if __name__ == "__main__":
+    load_dotenv()
+    scrape_website()

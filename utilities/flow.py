@@ -1,8 +1,11 @@
 from functools import wraps
+import os
 from typing import List
 from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.common.by import By
+
+from utilities.constant import TEST_ENV
 
 def switch_to_lastest_window(driver: webdriver.Chrome):
     """
@@ -18,48 +21,70 @@ def switch_to_lastest_window(driver: webdriver.Chrome):
     driver.switch_to.window(latest_window)
     return latest_window
 
-def iterate_over_new_windows(
+def iterate_over_web_elements(
     driver: webdriver.Chrome,
-    initial_page: str,
     selector_value: str,
     selector: str = By.CSS_SELECTOR,
 ):
     """
-        Iterate over new windows and execute function. This is a wrapper for functions that need to be executed in order to click on elements in new windows
-
-        Args:
-            driver: WebDriver instance of current session.
-            initial_page: Page to switch back after operations on the new page.
-            selector_value: Value of the selector to search for.
-            selector: selector type of elements. Default is By. CSS_SELECTOR.
-        
-        Returns: 
-            Function that takes as input function and returns result of that function.
+     Decorator to iterate over web elements. The function will be called with a list of WebElements that match the selector_value
+     
+     Args:
+     	 driver: WebDriver instance to be used for finding the elements
+     	 selector_value: Value of the selector to be used for finding the elements
+     	 selector: CSS Selector to be used for finding the elements
+     
+     Returns: 
+     	 None
     """
     def outer_wrapper(func):
         @wraps(func)
         def inner_wrapper(*args, **kwargs):
             """
-             Inner function for clicking on elements and open new window. It is used to execute function in new window
-             
-             
-             Returns: 
-             	 result of function execute
+             Inner function to find elements and pass them to the function that is called in sequence.
             """
             num_of_elements = len(driver.find_elements(selector, selector_value))
+            if os.environ.get('RUNNING_ENV') == TEST_ENV:
+                num_of_elements = min(num_of_elements, 2)
+            # Find elements in the driver and call func.
             for i in range(num_of_elements):
-                # Click on the element, open a new window
                 elements: List[WebElement] = driver.find_elements(selector, selector_value)
-                elements[i].click()
-                
-                switch_to_lastest_window(driver)
-                # Execute operation in new window 
-                result = func(*args, **kwargs)
-                
-                # close the current window and switch back to the initial page
-                driver.close()
-                driver.switch_to.window(initial_page)
+                kwargs['web_element'] = elements[i]
+                func(*args, **kwargs)
+        return inner_wrapper
+    return outer_wrapper
 
-            return result
+
+def operate_in_new_window(
+    driver: webdriver.Chrome,
+    initial_page: str,
+):
+    """
+     Decorator for clicking an element and open a new window. It is used to execute function in new window
+     
+     Args:
+     	 driver: WebDriver object to work with
+     	 initial_page: Page to switch to after clicking
+     
+     Returns: 
+     	 None
+    """
+    def outer_wrapper(func):
+        @wraps(func)
+        def inner_wrapper(*args, web_element, **kwargs):
+            """
+             Inner function for clicking an element and open a new window. It is used to execute function in new window
+            """
+            web_element.click()
+            
+
+            switch_to_lastest_window(driver)
+            # Execute operation in new window 
+            func(*args, **kwargs)
+            
+            # close the current window and switch back to the initial page
+            driver.close()
+            driver.switch_to.window(initial_page)
+
         return inner_wrapper
     return outer_wrapper
