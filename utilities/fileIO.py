@@ -13,6 +13,7 @@ def write_content_to_file(directory: str, file_name: str, content):
     # Create a directory if it doesn't exist.
     if not os.path.exists(directory):
         os.makedirs(directory)
+    file_name = file_name.replace('/', '|')
     file_path = f'{directory}/{file_name}'
     # Write the content to file only if it doesn't exist.
     if not os.path.exists(file_path):
