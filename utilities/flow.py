@@ -1,6 +1,6 @@
 from functools import wraps
 import os
-from typing import List
+from typing import Callable, List
 from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.common.by import By
@@ -25,6 +25,8 @@ def iterate_over_web_elements(
     driver: webdriver.Chrome,
     selector_value: str,
     selector: str = By.CSS_SELECTOR,
+    filter: Callable[[WebElement], bool] = lambda _: True,
+    stop: Callable[[WebElement], bool] = lambda _: False
 ):
     """
      Decorator to iterate over web elements. The function will be called with a list of WebElements that match the selector_value
@@ -49,8 +51,12 @@ def iterate_over_web_elements(
             # Find elements in the driver and call func.
             for i in range(num_of_elements):
                 elements: List[WebElement] = driver.find_elements(selector, selector_value)
-                kwargs['web_element'] = elements[i]
-                func(*args, **kwargs)
+                element = elements[i]
+                if stop(element):
+                    break
+                elif filter(element):
+                    kwargs['web_element'] = elements[i]
+                    func(*args, **kwargs)
         return inner_wrapper
     return outer_wrapper
 
