@@ -2,8 +2,9 @@ from datetime import datetime, timezone, timedelta
 import re
 from typing import List
 
+from utilities import constant
 
-def is_date_within_range(date_time: str, start_time: datetime.date, end_time: datetime.date, format: str = "%Y-%m-%d") -> bool:
+def is_date_within_range(date_time: str, start_time: datetime.date, end_time: datetime.date, format: str = constant.HYPHEN_JOINED_DATE_FORMAT) -> bool:
     """
     Check if the given date is within the specified start and end times.
 

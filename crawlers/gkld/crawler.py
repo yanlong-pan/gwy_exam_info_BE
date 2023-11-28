@@ -21,8 +21,9 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, pa
     
     def is_date_valid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
         date_str = e.find_element(By.XPATH, './/time').text
+        # convert human read time to datetime string
         if '前' in date_str:
-            date_str = dateparser.parse(date_str).strftime("%Y-%m-%d")
+            date_str = dateparser.parse(date_str).strftime(constant.HYPHEN_JOINED_DATE_FORMAT)
         return not timeutil.is_date_within_range(date_str, start_date, end_date)
 
     @flow.iterate_over_web_elements(
@@ -36,8 +37,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, pa
     )
     def save_notices():
         date = driver.find_element(By.CLASS_NAME, 'date').get_attribute('innerHTML')
-        pattern = r'\d{4}-\d{2}-\d{2}'
-        match = re.search(pattern, date)
+        match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
         date = match.group().replace('-', '_') if match else 'unknown_date'
 
         content = driver.find_element(By.CLASS_NAME, 'article-detail').get_attribute('innerHTML')
