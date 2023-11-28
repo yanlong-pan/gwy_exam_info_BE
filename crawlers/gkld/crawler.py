@@ -19,7 +19,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, pa
     driver.execute_script(f"window.open('{url}');")
     province_page_with_pagination = flow.switch_to_lastest_window(driver)
     
-    def is_date_valid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
+    def is_date_invalid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
         date_str = e.find_element(By.XPATH, './/time').text
         # convert human read time to datetime string
         if '前' in date_str:
@@ -29,7 +29,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, pa
     @flow.iterate_over_web_elements(
         driver = driver,
         selector_value = '.notice-list li',
-        stop = partial(is_date_valid, start_date=start_date, end_date=end_date)
+        stop = partial(is_date_invalid, start_date=start_date, end_date=end_date)
     )
     @flow.operate_in_new_window(
         driver = driver,
