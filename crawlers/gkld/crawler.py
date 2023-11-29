@@ -45,8 +45,9 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
         fileIO.write_content_to_file(f'{download_dir}/{province_name}/{exam_type}/{article_type}/{date}', f'{driver.title}.html', content)
 
     save_notices()
-    # 关闭省份页面 
-    driver.close()
+    # 关闭省份页面
+    if driver.current_window_handle == province_page_with_pagination:
+        driver.close()
 
 def scrape_website():
     driver = webdriver.Chrome()
