@@ -1,5 +1,8 @@
 import os
 
+def make_dir_if_not_exists(dir_path):
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
 
 def write_content_to_file(directory: str, file_name: str, content):
     """
@@ -11,8 +14,7 @@ def write_content_to_file(directory: str, file_name: str, content):
      	 content: Content to write to file as utf - 8
     """
     # Create a directory if it doesn't exist.
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    make_dir_if_not_exists(directory)
     file_name = file_name.replace('/', '|')
     file_path = f'{directory}/{file_name}'
     # Write the content to file only if it doesn't exist.
