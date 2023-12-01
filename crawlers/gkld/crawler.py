@@ -44,7 +44,13 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
         download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{article_type}/{date}'
         file_name = f'{driver.title}.html'.replace('/', '|')
         try:
-            attachments = map(lambda e: (e.get_attribute('href'), e.text), article.find_elements(By.XPATH, './/a[contains(@href, "file")]'))
+            attachments = map(
+                lambda e: (e.get_attribute('href'), e.text), 
+                article.find_elements(
+                    By.XPATH, 
+                    './/a[contains(@href, "file") or contains(@href, "attach")][string-length(normalize-space(text())) > 0][@target="_blank"]'
+                )
+            )
             mapping = {}
             for (download_url, attachment_name) in attachments:
                 fileIO.download_file_from_url(download_url, download_dir, attachment_name)
