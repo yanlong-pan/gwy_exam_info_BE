@@ -40,9 +40,22 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
         match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
         date = match.group().replace('-', '_') if match else 'unknown_date'
 
-        content = driver.find_element(By.CLASS_NAME, 'article-detail').get_attribute('innerHTML')
-        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles')
-        fileIO.write_content_to_file(f'{download_dir}/{province_name}/{exam_type}/{article_type}/{date}', f'{driver.title}.html', content)
+        article: WebElement = driver.find_element(By.CLASS_NAME, 'article-detail')
+        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{article_type}/{date}'
+        file_name = f'{driver.title}.html'.replace('/', '|')
+        try:
+            attachments = map(lambda e: (e.get_attribute('href'), e.text), article.find_elements(By.XPATH, './/a[contains(@href, "file")]'))
+            mapping = {}
+            for (download_url, attachment_name) in attachments:
+                fileIO.download_file_from_url(download_url, download_dir, attachment_name)
+                if file_name not in mapping:
+                    mapping[file_name] = []
+                mapping[file_name].append(attachment_name)
+            if mapping:
+                fileIO.add_mapping_between_attachments_and_article(download_dir, mapping)
+        finally:
+            content = article.get_attribute('innerHTML')
+            fileIO.write_content_to_file(download_dir, file_name, content)
 
     save_notices()
     # 关闭省份页面
