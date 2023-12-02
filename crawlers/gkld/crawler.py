@@ -1,4 +1,5 @@
 import datetime
+from bs4 import BeautifulSoup
 import dateparser
 from functools import partial
 import os
@@ -18,6 +19,16 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
     url = driver.current_url.split('?')[0] + f'?page={page_num}'
     driver.execute_script(f"window.open('{url}');")
     province_page_with_pagination = flow.switch_to_lastest_window(driver)
+    
+    def get_article_title(driver: webdriver.Chrome):
+        h1_element = driver.find_element(By.XPATH, './/div[@class="article-title"]/h1')
+        # 使用BeautifulSoup解析<h1>元素的HTML内容
+        soup = BeautifulSoup(h1_element.get_attribute("outerHTML"), "html.parser")
+        # 剔除<a>元素内的文本内容
+        for a in soup.find_all("a"):
+            a.extract()
+        # 获取<h1>元素的纯文本内容并输出
+        return soup.get_text().strip()
     
     def is_date_invalid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
         date_str = e.find_element(By.XPATH, './/time').text
@@ -42,7 +53,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
 
         article: WebElement = driver.find_element(By.CLASS_NAME, 'article-detail')
         download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{article_type}/{date}'
-        file_name = f'{driver.title}.html'.replace('/', '|')
+        file_name = (get_article_title(driver) + '.html').replace('/', '|')
         try:
             attachments = map(
                 lambda e: (e.get_attribute('href'), e.text), 
