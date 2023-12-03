@@ -1,8 +1,40 @@
+from functools import wraps
 import json
 import os
+from typing import List
 from urllib.parse import urlparse
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
+
+def _parse_html_files(root_directory, parse):
+    def outer_wrapper(func):
+        @wraps(func)
+        def inner_wrapper(*args, **kargs):
+            for root, dirs, files in os.walk(root_directory):
+                for filename in files:
+                    if filename.endswith(".html"):
+                        # 构建HTML文件的完整路径
+                        html_file_path = os.path.join(root, filename)
+                        
+                        # 使用BeautifulSoup解析HTML文件
+                        with open(html_file_path, 'r', encoding='utf-8') as html_file:
+                            
+                            # 获取相对路径（相对于根目录
+                            relative_path: str = os.path.relpath(html_file_path, root_directory)
+                            structures: List[str] = relative_path.split(os.path.sep)
+
+                            # 提取HTML内容
+                            if parse:
+                                soup = BeautifulSoup(html_file, 'html.parser')
+                                html_content = soup.get_text('\n')
+                            else:
+                                html_content =  html_file.read()
+                            # Inject args into the decorated function
+                            kargs['structures'] = structures
+                            kargs['html_content'] = html_content
+                            func(*args, **kargs)
+        return inner_wrapper
+    return outer_wrapper
 
 def make_dir_if_not_exists(dir_path):
     if not os.path.exists(dir_path):
@@ -97,38 +129,20 @@ def get_subdirectories(depth, path='.'):
 """
 def extract_html_to_doc(root_directory, output_doc_file, beautify: bool=False, parse: bool=True):
     # 打开输出的.doc文件
-    with open(output_doc_file, 'w', encoding='utf-8') as doc_file:
-        # 遍历根目录下的所有子目录和文件
-        for root, dirs, files in os.walk(root_directory):
-            for filename in files:
-                if filename.endswith(".html"):
-                    # 构建HTML文件的完整路径
-                    html_file_path = os.path.join(root, filename)
-                    
-                    # 使用BeautifulSoup解析HTML文件
-                    with open(html_file_path, 'r', encoding='utf-8') as html_file:
-                        
-                        # 获取相对路径（相对于根目录
-                        relative_path: str = os.path.relpath(html_file_path, root_directory)
-                        structures = relative_path.split(os.path.sep)
-                        
-                        # 提取HTML内容
-                        if parse:
-                            soup = BeautifulSoup(html_file, 'html.parser')
-                            html_content = soup.get_text('\n')
-                        else:
-                            html_content =  html_file.read()
-
-                        # 将标题和HTML内容写入.doc文件
-                        if beautify:
-                            # 在标题前添加分页符
-                            doc_file.write('\f')
-                        doc_file.write(f"标题: {structures[-1].strip('.html')}\n")
-                        doc_file.write(f"省份: {structures[0]}\n")
-                        doc_file.write(f"考试类型: {structures[1]}\n")
-                        doc_file.write(f"资讯类型: {structures[2]}\n")
-                        doc_file.write(f"采集日期: {structures[3].replace('_', '-')}\n")
-                        doc_file.write(html_content)
-                        doc_file.write('\n')
-                    
-                    # print(f"提取并保存：{html_file_path}")
+    with open(output_doc_file, 'a', encoding='utf-8') as doc_file:
+        @_parse_html_files(root_directory, parse)
+        def write_content(structures, html_content):
+            # 将标题和HTML内容写入.doc文件
+            if beautify:
+                # 在标题前添加分页符
+                doc_file.write('\f')
+            doc_file.write(f"标题: {structures[-1].strip('.html')}\n")
+            doc_file.write(f"省份: {structures[0]}\n")
+            doc_file.write(f"考试类型: {structures[1]}\n")
+            doc_file.write(f"资讯类型: {structures[2]}\n")
+            doc_file.write(f"采集日期: {structures[3].replace('_', '-')}\n")
+            doc_file.write(html_content)
+            doc_file.write('\n')
+            
+            # print(f"{'/'.join(structures)} is processed")
+        write_content()
