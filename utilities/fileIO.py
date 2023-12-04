@@ -178,11 +178,7 @@ root_directory = '/Users/panyanlong/workspace/gwy_exam_info/articles'
 extract_html_content_to_meilisearch(root_directory)
 """
 def extract_html_content_to_meilisearch(root_directory, parse: bool=False):
-    article_manager = ArticleManager(
-        os.environ.get('MEILISEARCH_URL', 'http://localhost:7700'),
-        os.environ.get('MEILISEARCH_MASTER_KEY'),
-        'articles'
-    )
+    article_manager = ArticleManager()
     
     articles = []
     @_parse_html_files(root_directory, parse)
