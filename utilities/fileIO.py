@@ -1,15 +1,27 @@
 from functools import wraps
+import inspect
 import json
 import os
 from typing import List
 from urllib.parse import urlparse
 from urllib.request import urlopen
+import uuid
 from bs4 import BeautifulSoup
+
+from search_engine.meilisearch.articles import Article, ArticleManager
 
 def _parse_html_files(root_directory, parse):
     def outer_wrapper(func):
         @wraps(func)
         def inner_wrapper(*args, **kargs):
+            # 获取被装饰函数的参数信息
+            parameters = inspect.signature(func).parameters
+            # 遍历参数，如果参数名在注入映射中，则注入对应的值
+            def _inject_params(injection_map: dict):
+                for param_name, param_value in injection_map.items():
+                    if param_name in parameters:
+                        kargs[param_name] = param_value
+
             for root, dirs, files in os.walk(root_directory):
                 for filename in files:
                     if filename.endswith(".html"):
@@ -29,10 +41,24 @@ def _parse_html_files(root_directory, parse):
                                 html_content = soup.get_text('\n')
                             else:
                                 html_content =  html_file.read()
-                            # Inject args into the decorated function
-                            kargs['structures'] = structures
-                            kargs['html_content'] = html_content
+                            
+                            _inject_params({
+                                'structures': structures,
+                                'html_content': html_content,
+                                'finished': False
+                            })
+
                             func(*args, **kargs)
+                            
+            else:
+                if 'finished' in parameters:
+                    _inject_params({
+                        'structures': None,
+                        'html_content': None,
+                        'finished': True
+                    })
+                    func(*args, **kargs)
+
         return inner_wrapper
     return outer_wrapper
 
@@ -146,3 +172,39 @@ def extract_html_to_doc(root_directory, output_doc_file, beautify: bool=False, p
             
             # print(f"{'/'.join(structures)} is processed")
         write_content()
+
+"""
+root_directory = '/Users/panyanlong/workspace/gwy_exam_info/articles'
+extract_html_content_to_meilisearch(root_directory)
+"""
+def extract_html_content_to_meilisearch(root_directory, parse: bool=False):
+    article_manager = ArticleManager(
+        os.environ.get('MEILISEARCH_URL', 'http://localhost:7700'),
+        os.environ.get('MEILISEARCH_MASTER_KEY'),
+        'articles'
+    )
+    
+    articles = []
+    @_parse_html_files(root_directory, parse)
+    def write_content(structures: List[str], html_content, finished):
+        nonlocal articles
+        if finished:
+            print(f'Writing {len(articles)} articles into meili')
+            return article_manager.index.add_documents(documents=articles, primary_key='id')
+
+        article = Article(
+            id=str(uuid.uuid4()),
+            title=structures[-1].strip('.html'),
+            province=structures[0],
+            exam_type=structures[1],
+            info_type=structures[2],
+            collect_date=structures[3].replace('_', '-'),
+            html_content=html_content
+        )
+        articles.append({**article.model_dump()})
+        if len(articles) >= 50:
+            print('Writing 50 articles into meili')
+            article_manager.index.add_documents(documents=articles, primary_key='id')
+            articles = []
+            
+    write_content()
