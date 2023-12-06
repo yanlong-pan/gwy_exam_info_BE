@@ -10,11 +10,22 @@ from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
 from dateutil.relativedelta import relativedelta 
 from utilities import constant, fileIO, flow, timeutil
 
-def process_province_page(driver: webdriver.Chrome, province_name, exam_type, article_type, page_num, start_date: datetime.date, end_date: datetime.date):
+def _create_chrome_web_driver(headless: bool = False):
+    chrome_options = Options()
+    if headless.lower() == "true":
+        chrome_options.add_argument('--headless')  # 启用headless模式
+
+    # 创建Chrome WebDriver
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.implicitly_wait(10)
+    return driver
+
+def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_date: datetime.date, end_date: datetime.date):
     #  Jump to specific page number
     url = driver.current_url.split('?')[0] + f'?page={page_num}'
     driver.execute_script(f"window.open('{url}');")
@@ -52,7 +63,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
         date = match.group().replace('-', '_') if match else 'unknown_date'
 
         article: WebElement = driver.find_element(By.CLASS_NAME, 'article-detail')
-        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{article_type}/{date}'
+        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{info_type}/{date}'
         file_name = (get_article_title(driver) + '.html').replace('/', '|')
         try:
             attachments = map(
@@ -80,8 +91,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, ar
         driver.close()
 
 def scrape_website():
-    driver = webdriver.Chrome()
-    driver.implicitly_wait(10)
+    driver = _create_chrome_web_driver(headless=os.getenv('HEADLESS_MODE'))
 
     def _click_checkbox(text, checked=False, interval=3):
         i_class = 'icon-oncheck' if checked else 'icon-check'
@@ -104,19 +114,19 @@ def scrape_website():
             # switch to the province detail page
             province_page = flow.switch_to_lastest_window(driver)
             
-            article_types: List[str] = driver.find_element(By.XPATH, '//dt[contains(text(),"资讯类型")]/following-sibling::dd/ul').text.split()
-            num_of_article_types = len(article_types)
+            info_types: List[str] = driver.find_element(By.XPATH, '//dt[contains(text(),"资讯类型")]/following-sibling::dd/ul').text.split()
+            num_of_info_types = len(info_types)
             exam_types: List[str] = driver.find_element(By.XPATH, '//dt[contains(text(),"考试类型")]/following-sibling::dd/ul').text.split()
             num_of_exam_types = len(exam_types)
 
-            for a_i in range(num_of_article_types):
-                _click_checkbox(article_types[a_i])
+            for a_i in range(num_of_info_types):
+                _click_checkbox(info_types[a_i])
                 if a_i > 0:
                     _click_checkbox(exam_types[-1], checked=True)
-                    _click_checkbox(article_types[a_i-1], checked=True)
+                    _click_checkbox(info_types[a_i-1], checked=True)
 
                 for i in range(num_of_exam_types):
-                    download_dir = os.path.join(os.getenv('DOWNLOAD_ARTICLES_DIR'), f'./{province_name}/{exam_types[i]}/{article_types[a_i]}')
+                    download_dir = os.path.join(os.getenv('DOWNLOAD_ARTICLES_DIR'), f'./{province_name}/{exam_types[i]}/{info_types[a_i]}')
                     fileIO.make_dir_if_not_exists(download_dir)
                     subdirectories = fileIO.get_subdirectories(depth=2, path=download_dir)
                     end_date: datetime.date = timeutil.get_current_date_in_timezone()
@@ -131,11 +141,11 @@ def scrape_website():
                         totalPages = int(driver.find_element(By.XPATH, '//li[a[text()="下一页"]]/preceding-sibling::li[1]').text)
                     except NoSuchElementException:
                         totalPages = 1
-                    if os.environ.get('RUNNING_ENV') == constant.TEST_ENV:
+                    if os.getenv('RUNNING_ENV') == constant.TEST_ENV:
                         totalPages = min(totalPages, 2)
                     # 处理每个分页
                     for j in range(1, totalPages + 1):
-                        process_province_page(driver, province_name, exam_types[i], article_types[a_i], j, start_date, end_date)
+                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_date, end_date)
                         driver.switch_to.window(province_page)
                     
             # 关闭新窗口并切换回原始窗口
