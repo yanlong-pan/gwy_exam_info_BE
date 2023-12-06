@@ -6,7 +6,7 @@ from typing import Type, TypeVar
 # 使用 TypeVar 来定义泛型 T
 T = TypeVar('T', bound=BaseModel)
 
-class Manager:
+class Manager(object):
     def __init__(self,
         index_uid: str,
         client_url: str = os.environ.get('MEILISEARCH_URL', 'http://localhost:7700'),
