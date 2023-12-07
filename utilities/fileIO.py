@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import wraps
 import inspect
 import json
@@ -7,8 +8,10 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 import uuid
 from bs4 import BeautifulSoup
+import pytz
 
-from search_engine.meilisearch.articles import Article, ArticleManager
+from search_engine.meilisearch.articles import Article, article_manager
+from utilities import constant, timeutil
 
 def _parse_html_files(root_directory, parse):
     def outer_wrapper(func):
@@ -178,29 +181,36 @@ root_directory = '/Users/panyanlong/workspace/gwy_exam_info/articles'
 extract_html_content_to_meilisearch(root_directory)
 """
 def extract_html_content_to_meilisearch(root_directory, parse: bool=False):
-    article_manager = ArticleManager()
-    
+
     articles = []
     @_parse_html_files(root_directory, parse)
     def write_content(structures: List[str], html_content, finished):
         nonlocal articles
         if finished:
-            print(f'Writing {len(articles)} articles into meili')
-            return article_manager.index.add_documents(documents=articles, primary_key='id')
+            if len(articles) > 0:
+                print(f'Writing {len(articles)} articles into meili')
+                article_manager.index.add_documents(documents=articles, primary_key='id')
+            return
 
-        article = Article(
-            id=str(uuid.uuid4()),
-            title=structures[-1].strip('.html'),
-            province=structures[0],
-            exam_type=structures[1],
-            info_type=structures[2],
-            collect_date=structures[3].replace('_', '-'),
-            html_content=html_content
-        )
-        articles.append({**article.model_dump()})
-        if len(articles) >= 50:
-            print('Writing 50 articles into meili')
-            article_manager.index.add_documents(documents=articles, primary_key='id')
-            articles = []
+        article_title = structures[-1].strip('.html')
+        if article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0:
+            article = Article(
+                id=str(uuid.uuid4()),
+                title=article_title,
+                province=structures[0],
+                exam_type=structures[1],
+                info_type=structures[2],
+                # set the parsed time to local timezone and then convert it to UTC timestamp
+                collect_date=datetime.strptime(structures[3].replace('_', '-'), constant.HYPHEN_JOINED_DATE_FORMAT)
+                    .replace(tzinfo=timeutil.get_tz())
+                    .astimezone(pytz.utc)
+                    .timestamp(),
+                html_content=html_content
+            )
+            articles.append({**article.model_dump()})
+            if len(articles) >= 50:
+                print('Writing 50 articles into meili')
+                article_manager.index.add_documents(documents=articles, primary_key='id')
+                articles = []
             
     write_content()
