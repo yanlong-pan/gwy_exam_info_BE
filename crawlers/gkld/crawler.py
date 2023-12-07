@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 from bs4 import BeautifulSoup
 import dateparser
 from functools import partial
@@ -7,13 +7,15 @@ import re
 import time
 from typing import List
 from dotenv import load_dotenv
+import pytz
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
-from dateutil.relativedelta import relativedelta 
-from utilities import constant, fileIO, flow, timeutil
+from dateutil.relativedelta import relativedelta
+from search_engine.meilisearch.articles import article_manager 
+from utilities import constant, fileIO, flow
 
 def _create_chrome_web_driver(headless: bool = False):
     chrome_options = Options()
@@ -25,7 +27,7 @@ def _create_chrome_web_driver(headless: bool = False):
     driver.implicitly_wait(10)
     return driver
 
-def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_date: datetime.date, end_date: datetime.date):
+def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt: datetime, end_dt: datetime):
     #  Jump to specific page number
     url = driver.current_url.split('?')[0] + f'?page={page_num}'
     driver.execute_script(f"window.open('{url}');")
@@ -41,17 +43,16 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
         # 获取<h1>元素的纯文本内容并输出
         return soup.get_text().strip()
     
-    def is_date_invalid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
+    def is_date_invalid(e: WebElement, start: datetime, end: datetime):
         date_str = e.find_element(By.XPATH, './/time').text
-        # convert human read time to datetime string
-        if '前' in date_str:
-            date_str = dateparser.parse(date_str).strftime(constant.HYPHEN_JOINED_DATE_FORMAT)
-        return not timeutil.is_date_within_range(date_str, start_date, end_date)
-
+        date_time: datetime = dateparser.parse(date_str) if '前' in date_str else datetime.strptime(date_str, constant.HYPHEN_JOINED_DATE_FORMAT)
+        # 统一时区再比较。若datetime对象未设置Timezone，调用astimezone方法默认会先转换本地时区
+        return not start.astimezone(pytz.utc) <= date_time.astimezone(pytz.utc) <= end.astimezone(pytz.utc)
+       
     @flow.iterate_over_web_elements(
         driver = driver,
         selector_value = '.notice-list li',
-        stop = partial(is_date_invalid, start_date=start_date, end_date=end_date)
+        stop = partial(is_date_invalid, start=start_dt, end=end_dt)
     )
     @flow.operate_in_new_window(
         driver = driver,
@@ -126,11 +127,13 @@ def scrape_website():
                     _click_checkbox(info_types[a_i-1], checked=True)
 
                 for i in range(num_of_exam_types):
-                    download_dir = os.path.join(os.getenv('DOWNLOAD_ARTICLES_DIR'), f'./{province_name}/{exam_types[i]}/{info_types[a_i]}')
-                    fileIO.make_dir_if_not_exists(download_dir)
-                    subdirectories = fileIO.get_subdirectories(depth=2, path=download_dir)
-                    end_date: datetime.date = timeutil.get_current_date_in_timezone()
-                    start_date: datetime.date= timeutil.extract_max_date(subdirectories) or end_date - relativedelta(months=1)
+                    end_dt: datetime = datetime.utcnow()
+                    filters={
+                        'province': province_name,
+                        'exam_type': exam_types[i],
+                        'info_type': info_types[a_i],
+                    }
+                    start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=1)
                     _click_checkbox(exam_types[i])
                     
                     if i > 0:
@@ -145,7 +148,7 @@ def scrape_website():
                         totalPages = min(totalPages, 2)
                     # 处理每个分页
                     for j in range(1, totalPages + 1):
-                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_date, end_date)
+                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_dt, end_dt)
                         driver.switch_to.window(province_page)
                     
             # 关闭新窗口并切换回原始窗口
