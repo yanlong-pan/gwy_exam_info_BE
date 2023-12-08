@@ -65,11 +65,20 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
         match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
         date = match.group()
 
-        article: WebElement = driver.find_element(By.CLASS_NAME, 'article-detail')
+        article: WebElement = driver.find_element(By.XPATH, '//div[@class="article-detail"]/article')
         article_title = get_article_title(driver).replace('/', '|')
         if article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0:
-            # TODO: parse content and remove sensitive data, also replace attachments' link
+            # TODO: replace attachments' link
             content = article.get_attribute('innerHTML')
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # 找到包含 "公考雷达" 字样的p元素并移除
+            elements_to_remove = soup.find_all(lambda tag: '公考雷达' in tag.text)
+            for element in elements_to_remove:
+                element.extract()
+
+            content = str(soup)
+
             article_manager.index.add_documents(documents=[{**Article(
                 id=str(uuid.uuid4()),
                 title=article_title,
