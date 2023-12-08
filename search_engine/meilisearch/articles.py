@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
+import pytz
 
 from search_engine.meilisearch.manager import Manager
 from utilities import Singleton
@@ -32,6 +33,6 @@ class ArticleManager(Manager):
                 'limit': 1
             }
         )
-        return datetime.utcfromtimestamp(r['hits'][0]['collect_date']) if r['hits'] else None
+        return datetime.utcfromtimestamp(r['hits'][0]['collect_date']).replace(tzinfo=pytz.utc) if r['hits'] else None
 
 article_manager = ArticleManager()
