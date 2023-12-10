@@ -15,7 +15,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
 from dateutil.relativedelta import relativedelta
-from search_engine.meilisearch.articles import Article, article_manager 
+from search_engine.meilisearch.articles import Article, article_manager
 from utilities import constant, flow, timeutil
 
 def _create_chrome_web_driver(headless: bool = False):
@@ -28,7 +28,7 @@ def _create_chrome_web_driver(headless: bool = False):
     driver.implicitly_wait(10)
     return driver
 
-def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt_utc: datetime, end_dt_utc: datetime):
+def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt: datetime, end_dt: datetime):
     #  Jump to specific page number
     url = driver.current_url.split('?')[0] + f'?page={page_num}'
     driver.execute_script(f"window.open('{url}');")
@@ -44,17 +44,20 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
         # 获取<h1>元素的纯文本内容并输出
         return soup.get_text().strip()
     
-    def is_date_invalid(e: WebElement, start_utc: datetime, end_utc: datetime):
+    def is_date_invalid(e: WebElement, start_dt: datetime, end_dt: datetime):
         date_str = e.find_element(By.XPATH, './/time').text
         date_time: datetime = dateparser.parse(date_str) if '前' in date_str else datetime.strptime(date_str, constant.HYPHEN_JOINED_DATE_FORMAT)
-        # 统一时区再比较。若datetime对象未设置Timezone，调用astimezone方法默认会先转换本地时区
-        is_within_range = start_utc <= date_time.astimezone(pytz.utc) <= end_utc
-        return not is_within_range
-       
+        # 检查
+        if start_dt.tzinfo.zone == end_dt.tzinfo.zone == timeutil.get_tz().zone:
+            is_within_range = start_dt <= timeutil.localize_native_dt(date_time)<= end_dt
+            return not is_within_range
+        else:
+            raise Exception('Inconsistent TZ')
+
     @flow.iterate_over_web_elements(
         driver = driver,
         selector_value = '.notice-list li',
-        stop = partial(is_date_invalid, start_utc=start_dt_utc, end_utc=end_dt_utc)
+        stop = partial(is_date_invalid, start_dt=start_dt, end_dt=end_dt)
     )
     @flow.operate_in_new_window(
         driver = driver,
@@ -63,7 +66,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
     def save_notices():
         date = driver.find_element(By.CLASS_NAME, 'date').get_attribute('innerHTML')
         match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
-        date = match.group()
+        date: str = match.group()
 
         article: WebElement = driver.find_element(By.XPATH, '//div[@class="article-detail"]/article')
         article_title = get_article_title(driver).replace('/', '|')
@@ -86,10 +89,8 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
                 exam_type=exam_type,
                 info_type=info_type,
                 # set the parsed time to local timezone and then convert it to UTC timestamp
-                collect_date=datetime.strptime(date, constant.HYPHEN_JOINED_DATE_FORMAT)
-                    .replace(tzinfo=timeutil.get_tz())
-                    .astimezone(pytz.utc)
-                    .timestamp(),
+                collect_date=timeutil.local_dt_str_to_utc_ts(date),
+                human_read_date=date,
                 html_content=content
             ).model_dump()}])
             
@@ -109,6 +110,7 @@ def scrape_website():
     try:
         driver.get('https://www.gongkaoleida.com/')
         homepage = driver.current_window_handle
+        end_dt: datetime = timeutil.localize_native_dt(datetime.now())
 
         # Iterate over all the provinces
         @flow.iterate_over_web_elements(
@@ -134,13 +136,12 @@ def scrape_website():
                     _click_checkbox(info_types[a_i-1], checked=True)
 
                 for i in range(num_of_exam_types):
-                    end_dt_utc: datetime = datetime.now().astimezone(pytz.utc)
                     filters={
                         'province': province_name,
                         'exam_type': exam_types[i],
                         'info_type': info_types[a_i],
                     }
-                    start_dt_utc: datetime = article_manager.get_max_collect_date(filters) or end_dt_utc - relativedelta(months=1)
+                    start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=1)
                     _click_checkbox(exam_types[i])
                     
                     if i > 0:
@@ -155,7 +156,7 @@ def scrape_website():
                         totalPages = min(totalPages, 2)
                     # 处理每个分页
                     for j in range(1, totalPages + 1):
-                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_dt_utc, end_dt_utc)
+                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_dt, end_dt)
                         driver.switch_to.window(province_page)
                     
             # 关闭新窗口并切换回原始窗口
