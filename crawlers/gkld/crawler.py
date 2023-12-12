@@ -1,4 +1,5 @@
-import datetime
+from datetime import datetime
+import uuid
 from bs4 import BeautifulSoup
 import dateparser
 from functools import partial
@@ -7,13 +8,15 @@ import re
 import time
 from typing import List
 from dotenv import load_dotenv
+import pytz
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
-from dateutil.relativedelta import relativedelta 
-from utilities import constant, fileIO, flow, timeutil
+from dateutil.relativedelta import relativedelta
+from search_engine.meilisearch.articles import Article, article_manager
+from utilities import constant, flow, timeutil
 
 def _create_chrome_web_driver(headless: bool = False):
     chrome_options = Options()
@@ -25,7 +28,7 @@ def _create_chrome_web_driver(headless: bool = False):
     driver.implicitly_wait(10)
     return driver
 
-def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_date: datetime.date, end_date: datetime.date):
+def process_province_page(driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt: datetime, end_dt: datetime):
     #  Jump to specific page number
     url = driver.current_url.split('?')[0] + f'?page={page_num}'
     driver.execute_script(f"window.open('{url}');")
@@ -41,17 +44,20 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
         # 获取<h1>元素的纯文本内容并输出
         return soup.get_text().strip()
     
-    def is_date_invalid(e: WebElement, start_date: datetime.date, end_date: datetime.date):
+    def is_date_invalid(e: WebElement, start_dt: datetime, end_dt: datetime):
         date_str = e.find_element(By.XPATH, './/time').text
-        # convert human read time to datetime string
-        if '前' in date_str:
-            date_str = dateparser.parse(date_str).strftime(constant.HYPHEN_JOINED_DATE_FORMAT)
-        return not timeutil.is_date_within_range(date_str, start_date, end_date)
+        date_time: datetime = dateparser.parse(date_str) if '前' in date_str else datetime.strptime(date_str, constant.HYPHEN_JOINED_DATE_FORMAT)
+        # 检查
+        if start_dt.tzinfo.zone == end_dt.tzinfo.zone == timeutil.get_tz().zone:
+            is_within_range = start_dt <= timeutil.localize_native_dt(date_time)<= end_dt
+            return not is_within_range
+        else:
+            raise Exception('Inconsistent TZ')
 
     @flow.iterate_over_web_elements(
         driver = driver,
         selector_value = '.notice-list li',
-        stop = partial(is_date_invalid, start_date=start_date, end_date=end_date)
+        stop = partial(is_date_invalid, start_dt=start_dt, end_dt=end_dt)
     )
     @flow.operate_in_new_window(
         driver = driver,
@@ -60,31 +66,34 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
     def save_notices():
         date = driver.find_element(By.CLASS_NAME, 'date').get_attribute('innerHTML')
         match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
-        date = match.group().replace('-', '_') if match else 'unknown_date'
+        date: str = match.group()
 
-        article: WebElement = driver.find_element(By.CLASS_NAME, 'article-detail')
-        download_dir = os.getenv('DOWNLOAD_ARTICLES_DIR', './articles') + f'/{province_name}/{exam_type}/{info_type}/{date}'
-        file_name = (get_article_title(driver) + '.html').replace('/', '|')
-        try:
-            attachments = map(
-                lambda e: (e.get_attribute('href'), e.text), 
-                article.find_elements(
-                    By.XPATH, 
-                    './/a[contains(@href, "file") or contains(@href, "attach")][string-length(normalize-space(text())) > 0][@target="_blank"]'
-                )
-            )
-            mapping = {}
-            for (download_url, attachment_name) in attachments:
-                fileIO.download_file_from_url(download_url, download_dir, attachment_name)
-                if file_name not in mapping:
-                    mapping[file_name] = []
-                mapping[file_name].append(attachment_name)
-            if mapping:
-                fileIO.add_mapping_between_attachments_and_article(download_dir, mapping)
-        finally:
+        article: WebElement = driver.find_element(By.XPATH, '//div[@class="article-detail"]/article')
+        article_title = get_article_title(driver).replace('/', '|')
+        if article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0:
+            # TODO: replace attachments' link
             content = article.get_attribute('innerHTML')
-            fileIO.write_content_to_file(download_dir, file_name, content)
+            soup = BeautifulSoup(content, 'html.parser')
 
+            # 找到包含 "公考雷达" 字样的p元素并移除
+            elements_to_remove = soup.find_all(lambda tag: '公考雷达' in tag.text)
+            for element in elements_to_remove:
+                element.extract()
+
+            content = str(soup)
+
+            article_manager.index.add_documents(documents=[{**Article(
+                id=str(uuid.uuid4()),
+                title=article_title,
+                province=province_name,
+                exam_type=exam_type,
+                info_type=info_type,
+                # set the parsed time to local timezone and then convert it to UTC timestamp
+                collect_date=timeutil.local_dt_str_to_utc_ts(date),
+                human_read_date=date,
+                html_content=content
+            ).model_dump()}])
+            
     save_notices()
     # 关闭省份页面
     if driver.current_window_handle == province_page_with_pagination:
@@ -101,6 +110,7 @@ def scrape_website():
     try:
         driver.get('https://www.gongkaoleida.com/')
         homepage = driver.current_window_handle
+        end_dt: datetime = timeutil.localize_native_dt(datetime.now())
 
         # Iterate over all the provinces
         @flow.iterate_over_web_elements(
@@ -126,11 +136,12 @@ def scrape_website():
                     _click_checkbox(info_types[a_i-1], checked=True)
 
                 for i in range(num_of_exam_types):
-                    download_dir = os.path.join(os.getenv('DOWNLOAD_ARTICLES_DIR'), f'./{province_name}/{exam_types[i]}/{info_types[a_i]}')
-                    fileIO.make_dir_if_not_exists(download_dir)
-                    subdirectories = fileIO.get_subdirectories(depth=2, path=download_dir)
-                    end_date: datetime.date = timeutil.get_current_date_in_timezone()
-                    start_date: datetime.date= timeutil.extract_max_date(subdirectories) or end_date - relativedelta(months=1)
+                    filters={
+                        'province': province_name,
+                        'exam_type': exam_types[i],
+                        'info_type': info_types[a_i],
+                    }
+                    start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=1)
                     _click_checkbox(exam_types[i])
                     
                     if i > 0:
@@ -145,7 +156,7 @@ def scrape_website():
                         totalPages = min(totalPages, 2)
                     # 处理每个分页
                     for j in range(1, totalPages + 1):
-                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_date, end_date)
+                        process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_dt, end_dt)
                         driver.switch_to.window(province_page)
                     
             # 关闭新窗口并切换回原始窗口
