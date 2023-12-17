@@ -41,6 +41,7 @@ class ArticleManager(Manager):
             opt_params = {
                 'filter': [f'collect_date >= {start_date}', f'collect_date <= {end_date}'] + [f'{key}={value}' for key, value in filters.items()],
                 'sort': ['collect_date:desc'],
+                'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date']
             }
         )
         return r['hits'] if r['hits'] else None
