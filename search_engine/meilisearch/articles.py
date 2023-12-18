@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Union
 from pydantic import BaseModel
 
 from search_engine.meilisearch.manager import Manager
@@ -35,10 +36,14 @@ class ArticleManager(Manager):
         )
         return timeutil.localize_native_dt(datetime.fromtimestamp(r['hits'][0]['collect_date'])) if r['hits'] else None
 
-    def search_articles(self, query: str, start_date: float, end_date: float, filters: dict={}):
+    def search_articles(self, query: str, page: Union[str, int], start_date: float, end_date: float, filters: dict={}):
+        limit = 20
+        offset = (int(page) - 1) * limit
         r: dict = self.index.search(
             query = query,
             opt_params = {
+                'offset': offset,
+                'limit': limit,
                 'filter': [f'collect_date >= {start_date}', f'collect_date <= {end_date}'] + [f'{key}={value}' for key, value in filters.items()],
                 'sort': ['collect_date:desc'],
                 'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date']

@@ -13,6 +13,7 @@ app.include_router(auth_router, prefix="/auth", tags=["auth"])
 async def search_articles(params: SearchArticles, client_id: str = Depends(get_current_client)):
     search_results = article_manager.search_articles(
         query = params.query,
+        page = params.page,
         start_date = timeutil.local_dt_str_to_utc_ts(params.start_date),
         end_date = timeutil.local_dt_str_to_utc_ts(params.end_date),
         filters = params.filters,
