@@ -41,7 +41,12 @@ class ArticleManager(Manager):
         limit = 20
         offset = (int(page) - 1) * limit
         # construct filter array
-        filter = [f'{key}={value}' for key, value in filters.items()]
+        filter = []
+        for key, value in filters.items():
+            if isinstance(value, list):
+                filter.append([f'{key}={v}' for v in value])
+            else:
+                filter.append(f'{key}={value}')
         if not end_date:
             end_date = datetime.now().timestamp()
         filter.append(f'collect_date <= {end_date}')
