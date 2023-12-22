@@ -36,15 +36,24 @@ class ArticleManager(Manager):
         )
         return timeutil.localize_native_dt(datetime.fromtimestamp(r['hits'][0]['collect_date'])) if r['hits'] else None
 
-    def search_articles(self, query: str, page: Union[str, int], start_date: float, end_date: float, filters: dict={}):
+    def search_articles(self, query: str, page: Union[str, int], start_date: float = None, end_date: float = None, filters: dict={}):
+        # construct pagination params
         limit = 20
         offset = (int(page) - 1) * limit
+        # construct filter array
+        filter = [f'{key}={value}' for key, value in filters.items()]
+        if not end_date:
+            end_date = datetime.now().timestamp()
+        filter.append(f'collect_date <= {end_date}')
+        if start_date:
+            filter.append(f'collect_date >= {start_date}')
+
         r: dict = self.index.search(
             query = query,
             opt_params = {
                 'offset': offset,
                 'limit': limit,
-                'filter': [f'collect_date >= {start_date}', f'collect_date <= {end_date}'] + [f'{key}={value}' for key, value in filters.items()],
+                'filter': filter,
                 'sort': ['collect_date:desc'],
                 'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date']
             }

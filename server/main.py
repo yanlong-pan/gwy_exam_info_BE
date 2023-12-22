@@ -14,8 +14,8 @@ async def search_articles(params: SearchArticles, client_id: str = Depends(get_c
     search_results = article_manager.search_articles(
         query = params.query,
         page = params.page,
-        start_date = timeutil.local_dt_str_to_utc_ts(params.start_date),
-        end_date = timeutil.local_dt_str_to_utc_ts(params.end_date),
+        start_date = timeutil.local_dt_str_to_utc_ts(params.start_date) if params.start_date else None,
+        end_date = timeutil.local_dt_str_to_utc_ts(params.end_date) if params.end_date else None,
         filters = params.filters,
     )
     return Response(code=1, msg='Success', result=search_results)
