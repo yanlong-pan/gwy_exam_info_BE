@@ -20,8 +20,16 @@ class ArticleManager(Manager):
     def __init__(self):
         super().__init__('articles')
         self.index.update_settings({
-            'filterableAttributes': ['province', 'exam_type', 'info_type', 'collect_date', 'title', 'human_read_date'],
-            'sortableAttributes': ['collect_date']
+            'filterableAttributes': ['title', 'province', 'exam_type', 'info_type', 'collect_date', 'human_read_date'],
+            'sortableAttributes': ['collect_date'],
+            'rankingRules':[
+                "exactness",
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+            ],
         })
     
     def get_max_collect_date(self, filters: dict={}):
@@ -52,7 +60,7 @@ class ArticleManager(Manager):
         filter.append(f'collect_date <= {end_date}')
         if start_date:
             filter.append(f'collect_date >= {start_date}')
-
+        # construct Chinese tokens
         r: dict = self.index.search(
             query = query,
             opt_params = {
@@ -60,7 +68,7 @@ class ArticleManager(Manager):
                 'limit': limit,
                 'filter': filter,
                 'sort': ['collect_date:desc'],
-                'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date']
+                'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date'],
             }
         )
         return r['hits'] if r['hits'] else None
