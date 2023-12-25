@@ -67,7 +67,15 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
         date = driver.find_element(By.CLASS_NAME, 'date').get_attribute('innerHTML')
         match = re.search(constant.HYPHEN_JOINED_DATE_REGEX, date)
         date: str = match.group()
-
+        apply_deadline = None
+        # extract application deadline if possible
+        try:
+            job_info = driver.find_element(By.XPATH, '//div[@class="jobinfo-list"]//li[contains(., "报名时间")]')
+            apply_dt = timeutil.extract_dates(job_info.text)
+            apply_deadline = apply_dt['end_time']
+        except:
+            pass
+        # extract main body
         article: WebElement = driver.find_element(By.XPATH, '//div[@class="article-detail"]/article')
         article_title = get_article_title(driver).replace('/', '|')
         if article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0:
@@ -90,7 +98,7 @@ def process_province_page(driver: webdriver.Chrome, province_name, exam_type, in
                 info_type=info_type,
                 # set the parsed time to local timezone and then convert it to UTC timestamp
                 collect_date=timeutil.local_dt_str_to_utc_ts(date),
-                human_read_date=date,
+                apply_deadline=apply_deadline,
                 html_content=content
             ).model_dump()}])
             

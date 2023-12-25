@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Union
+from typing import Optional, Union
 from pydantic import BaseModel
 
 from search_engine.meilisearch.manager import Manager
@@ -11,7 +11,7 @@ class Article(BaseModel):
     exam_type: str
     info_type: str
     collect_date: float  # numeric UNIX timestamp
-    human_read_date: str
+    apply_deadline: Optional[str]
     html_content: str
 
 @Singleton
@@ -20,7 +20,7 @@ class ArticleManager(Manager):
     def __init__(self):
         super().__init__('articles')
         self.index.update_settings({
-            'filterableAttributes': ['title', 'province', 'exam_type', 'info_type', 'collect_date', 'human_read_date'],
+            'filterableAttributes': ['title', 'province', 'exam_type', 'info_type', 'collect_date', 'apply_deadline'],
             'sortableAttributes': ['collect_date'],
             'rankingRules':[
                 "exactness",
@@ -68,7 +68,7 @@ class ArticleManager(Manager):
                 'limit': limit,
                 'filter': filter,
                 'sort': ['collect_date:desc'],
-                'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'human_read_date'],
+                'attributesToRetrieve': ['id', 'title', 'province', 'exam_type', 'info_type', 'apply_deadline'],
             }
         )
         return r['hits'] if r['hits'] else None
