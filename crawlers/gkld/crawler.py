@@ -70,7 +70,7 @@ class GkldCrawler(Crawler):
         content = str(soup)
         return content
 
-    def is_unique_article(article_title):
+    def is_unique_article(self, article_title):
         return article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0
 
     def process_province_page(self, driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt: datetime, end_dt: datetime):
