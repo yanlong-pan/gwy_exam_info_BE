@@ -46,24 +46,30 @@ class GkldCrawler(Crawler):
         date: str = match.group()
         return date
 
-    def extract_apply_deadline(self, driver: webdriver.Chrome):
+    def extract_apply_deadline(self, driver: webdriver.Chrome, collect_date_str: str):
         deadline = None
         try:
             job_info = driver.find_element(By.XPATH, '//div[@class="jobinfo-list"]//li[contains(., "报名时间")]')
-            apply_dt = timeutil.extract_dates(job_info.text)
-            deadline = apply_dt['end_time']
+            deadline = timeutil.extract_end_datetime(job_info.text, collect_date_str)
         except:
             pass
         return deadline
 
     def extract_article_content(self, driver: webdriver.Chrome):
+        def _should_remove(tag):
+            if '公考雷达' in tag.text:
+                return True
+            if tag.name == 'a' and tag.get('href') and 'www.gongkaoleida.com/search' in tag.get('href'):
+                return True
+            return False
+
         article: WebElement = driver.find_element(By.XPATH, '//div[@class="article-detail"]/article')
         # TODO: replace attachments' link
         content = article.get_attribute('innerHTML')
         soup = BeautifulSoup(content, 'html.parser')
 
         # 找到包含 "公考雷达" 字样的p元素并移除
-        elements_to_remove = soup.find_all(lambda tag: '公考雷达' in tag.text)
+        elements_to_remove = soup.find_all(_should_remove)
         for element in elements_to_remove:
             element.extract()
 
@@ -90,6 +96,7 @@ class GkldCrawler(Crawler):
         )
         def save_notices():
             article_title = self.extract_article_title(driver).replace('/', '|')
+            collect_date_str = self.extract_collect_date(driver)
             if self.is_unique_article(article_title):
                 article_manager.index.add_documents(documents=[{**Article(
                     id=str(uuid.uuid4()),
@@ -98,8 +105,8 @@ class GkldCrawler(Crawler):
                     exam_type=exam_type,
                     info_type=info_type,
                     # set the parsed time to local timezone and then convert it to UTC timestamp
-                    collect_date=timeutil.local_dt_str_to_utc_ts(self.extract_collect_date(driver)),
-                    apply_deadline=self.extract_apply_deadline(driver),
+                    collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
+                    apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
                     html_content=self.extract_article_content(driver)
                 ).model_dump()}])
                 
@@ -150,7 +157,7 @@ class GkldCrawler(Crawler):
                             'exam_type': exam_types[i],
                             'info_type': info_types[a_i],
                         }
-                        start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=1)
+                        start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=3)
                         _click_checkbox(exam_types[i])
                         
                         if i > 0:

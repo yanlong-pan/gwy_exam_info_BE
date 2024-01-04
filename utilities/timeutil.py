@@ -1,8 +1,8 @@
 import os
 import re
+import requests
 import pytz
 from datetime import datetime
-from typing import Dict, Optional
 from utilities import constant
 
 def get_tz():
@@ -19,21 +19,38 @@ def local_dt_str_to_utc_ts(dt_str, format = constant.HYPHEN_JOINED_DATE_FORMAT):
     return localize_native_dt(datetime.strptime(dt_str, format)).timestamp()
 
 def format_date(date_str: str) -> str:
-    # 替换年月日为-
     formatted_date = re.sub(r'年|月', '-', date_str)
-    formatted_date = re.sub(r'日', '', formatted_date)
+    formatted_date = re.sub(r'日', ' ', formatted_date)
     return formatted_date
 
-def extract_dates(text: str) -> Dict[str, Optional[str]]:
-    date_pattern = r"(\d{4}.\d{1,2}.?(\d{0,2}.?)?)"
-    # date_pattern = r"(\d{4}[-年]\d{1,2}[-月]?(\d{0,2}(日)?)?)"
-    dates = re.findall(date_pattern, text.replace('至', '-'))
-    dates = [format_date(date[0]) for date in dates]
+def extract_end_dt_with_regex(text: str) -> (bool, str):
+    datetime_pattern = r"(\d{4}.\d{1,2}.?(\d{0,2}.?)?(.?\d{2}:\d{2})?)"
+    datetime_matches = re.findall(datetime_pattern, text.replace('至', '-'))
+    try:
+        if datetime_matches:
+            end_time = format_date(datetime_matches[-1][0])
+            return (True, end_time)
+        else:
+            return (False, text)
+    except:
+        return (False, text)
 
-    end_time = dates[1] if len(dates) > 1 else (dates[0] if dates else None)
-    start_time = dates[0] if len(dates) > 1 else None
-
-    return {
-        "start_time": start_time,
-        "end_time": end_time if end_time else text
+def extract_end_dt_with_ai(text: str, collect_date_str: str) -> (bool, str):
+    params = {
+        'appId': os.getenv('UNI_APP_ID'),
+        'collectDate': collect_date_str,
+        'text': text,
     }
+    response = requests.get(os.getenv('UNI_APP_AI_CLOUD_URL'), params=params)
+    if response.status_code == 200:
+        return extract_end_dt_with_regex(response.text)
+    else:
+        return (False, text)
+
+def extract_end_datetime(text: str, collect_date_str: str):
+    isSuccess, result = extract_end_dt_with_regex(text)
+    if isSuccess:
+        return result
+    else:
+        _, r = extract_end_dt_with_ai(text, collect_date_str)
+        return r
