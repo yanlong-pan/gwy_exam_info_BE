@@ -20,7 +20,7 @@ def local_dt_str_to_utc_ts(dt_str, format = constant.HYPHEN_JOINED_DATE_FORMAT):
 
 def format_date(date_str: str) -> str:
     formatted_date = re.sub(r'年|月', '-', date_str)
-    formatted_date = re.sub(r'日', ' ', formatted_date)
+    formatted_date = re.sub(r'日', ' ' if len(date_str) > 10 else '', formatted_date)
     return formatted_date
 
 def extract_end_dt_with_regex(text: str) -> (bool, str):
@@ -43,14 +43,20 @@ def extract_end_dt_with_ai(text: str, collect_date_str: str) -> (bool, str):
     }
     response = requests.get(os.getenv('UNI_APP_AI_CLOUD_URL'), params=params)
     if response.status_code == 200:
-        return extract_end_dt_with_regex(response.text)
+        dt = extract_end_dt_with_regex(response.text)
+        return dt
     else:
         return (False, text)
 
 def extract_end_datetime(text: str, collect_date_str: str):
-    isSuccess, result = extract_end_dt_with_regex(text)
-    if isSuccess:
-        return result
+    # len('报名时间：2023年1月2日 14:30') = 20, 正则匹配仅处理最简单的情况
+    if len(text) <= 21:
+        isSuccess, result = extract_end_dt_with_regex(text)
+        if isSuccess:
+            return result
+        else:
+            _, r = extract_end_dt_with_ai(text, collect_date_str)
+            return r
     else:
         _, r = extract_end_dt_with_ai(text, collect_date_str)
         return r
