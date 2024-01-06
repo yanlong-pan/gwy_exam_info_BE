@@ -14,7 +14,8 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import NoSuchElementException
 from dateutil.relativedelta import relativedelta
 from crawlers import Crawler
-from search_engine.meilisearch.articles import Article, article_manager
+from models.article import Article, ArticleManager
+from search_engine.meilisearch.articles import meilisearch_article_manager
 from utilities import Singleton, constant, flow, timeutil
 
 @Singleton
@@ -76,10 +77,13 @@ class GkldCrawler(Crawler):
         content = str(soup)
         return content
 
-    def is_unique_article(self, article_title):
-        return article_manager.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0
-
-    def process_province_page(self, driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, start_dt: datetime, end_dt: datetime):
+    def process_province_page(self, article_manager: ArticleManager, driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, end_dt: datetime):
+        filters={
+            'province': province_name,
+            'exam_type': exam_type,
+            'info_type': info_type,
+        }
+        start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=3)
         #  Jump to specific page number
         url = driver.current_url.split('?')[0] + f'?page={page_num}'
         driver.execute_script(f"window.open('{url}');")
@@ -97,18 +101,19 @@ class GkldCrawler(Crawler):
         def save_notices():
             article_title = self.extract_article_title(driver).replace('/', '|')
             collect_date_str = self.extract_collect_date(driver)
-            if self.is_unique_article(article_title):
-                article_manager.index.add_documents(documents=[{**Article(
-                    id=str(uuid.uuid4()),
-                    title=article_title,
-                    province=province_name,
-                    exam_type=exam_type,
-                    info_type=info_type,
-                    # set the parsed time to local timezone and then convert it to UTC timestamp
-                    collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
-                    apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
-                    html_content=self.extract_article_content(driver)
-                ).model_dump()}])
+            article = Article(
+                id=str(uuid.uuid4()),
+                title=article_title,
+                province=province_name,
+                exam_type=exam_type,
+                info_type=info_type,
+                # set the parsed time to local timezone and then convert it to UTC timestamp
+                collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
+                apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
+                html_content=self.extract_article_content(driver)
+            )
+            if article_manager.is_unique_article(article):
+                article_manager.insert_article(article)
                 
         save_notices()
         # 关闭省份页面
@@ -152,12 +157,6 @@ class GkldCrawler(Crawler):
                         _click_checkbox(info_types[a_i-1], checked=True)
 
                     for i in range(num_of_exam_types):
-                        filters={
-                            'province': province_name,
-                            'exam_type': exam_types[i],
-                            'info_type': info_types[a_i],
-                        }
-                        start_dt: datetime = article_manager.get_max_collect_date(filters) or end_dt - relativedelta(months=3)
                         _click_checkbox(exam_types[i])
                         
                         if i > 0:
@@ -172,7 +171,7 @@ class GkldCrawler(Crawler):
                             totalPages = min(totalPages, 2)
                         # 处理每个分页
                         for j in range(1, totalPages + 1):
-                            self.process_province_page(driver, province_name, exam_types[i], info_types[a_i], j, start_dt, end_dt)
+                            self.process_province_page(meilisearch_article_manager, driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
                             driver.switch_to.window(province_page)
                         
                 # 关闭新窗口并切换回原始窗口

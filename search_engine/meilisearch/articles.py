@@ -1,21 +1,11 @@
 from datetime import datetime
-from typing import Optional, Union
-from pydantic import BaseModel
-
-from search_engine.meilisearch.manager import Manager
+from typing import Union
+from models.article import Article, ArticleManager
+from search_engine.meilisearch.manager import IndexManager
 from utilities import Singleton, timeutil
-class Article(BaseModel):
-    id: str
-    title: str
-    province: str
-    exam_type: str
-    info_type: str
-    collect_date: float  # numeric UNIX timestamp
-    apply_deadline: Optional[str]
-    html_content: str
 
 @Singleton
-class ArticleManager(Manager):
+class MeiliSearchArticleManager(ArticleManager, IndexManager):
 
     def __init__(self):
         super().__init__('articles')
@@ -32,7 +22,7 @@ class ArticleManager(Manager):
             ],
         })
     
-    def get_max_collect_date(self, filters: dict={}):
+    def get_max_collect_date(self, filters: dict={}) -> Union[datetime, None]:
         r: dict = self.index.search(
             query = '*',
             opt_params = {
@@ -73,4 +63,10 @@ class ArticleManager(Manager):
         )
         return r['hits'] if r['hits'] else None
 
-article_manager = ArticleManager()
+    def is_unique_article(self, article: Article) -> bool:
+        return self.index.get_documents({'filter': [f'title="{article.title}"']}).total == 0
+    
+    def insert_article(self, article: Article) -> None:
+        self.index.add_documents(documents=[{**article.model_dump()}])
+
+meilisearch_article_manager = MeiliSearchArticleManager()
