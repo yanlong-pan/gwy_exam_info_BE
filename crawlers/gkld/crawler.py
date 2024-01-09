@@ -112,8 +112,7 @@ class GkldCrawler(Crawler):
                 apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
                 html_content=self.extract_article_content(driver)
             )
-            if article_manager.is_unique_article(article):
-                article_manager.insert_article(article)
+            article_manager.insert_article(article)
                 
         save_notices()
         # 关闭省份页面

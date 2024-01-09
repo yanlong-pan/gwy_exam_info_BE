@@ -14,10 +14,6 @@ class Article(BaseModel):
     html_content: str
 
 class ArticleManager(ABC):
-
-    @abstractmethod
-    def is_unique_article(self, article: Article) -> bool:
-        pass
     
     @abstractmethod
     def insert_article(self, article: Article) -> None:
