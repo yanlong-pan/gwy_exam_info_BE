@@ -9,3 +9,4 @@ uvicorn==0.24.0.post1
 python-jose==3.3.0
 python-multipart==0.0.6
 meilisearch==0.28.4
+kuai_log==0.8

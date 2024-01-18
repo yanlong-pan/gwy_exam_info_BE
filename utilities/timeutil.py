@@ -3,7 +3,7 @@ import re
 import requests
 import pytz
 from datetime import datetime
-from utilities import constant
+from utilities import constant, loggers
 
 def get_tz():
     return pytz.timezone(os.getenv('TZ', constant.DEFAULT_TZ))
@@ -44,7 +44,7 @@ def extract_end_dt_with_ai(text: str, collect_date_str: str) -> (bool, str):
     response = requests.get(os.getenv('UNI_APP_AI_CLOUD_URL'), params=params)
     if response.status_code == 200:
         dt = extract_end_dt_with_regex(response.text)
-        print(f"使用AI服务，原输入为{text}，AI解析后为{dt}") # TODO：改为使用logging
+        loggers.file_logger.debug(f"使用AI服务,原输入为'{text}',AI解析后为'{response.text}'")
         return dt
     else:
         return (False, text)
@@ -60,7 +60,7 @@ def extract_end_datetime(text: str, collect_date_str: str, pattern: str = None):
     if not pattern:
         pattern = r"报名时间[：:](\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{1,2})?)(?:\s*至\s*)(\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{1,2})?)"
     text = text.replace('官方报名入口', '').strip()
-    if len(text) <= 21 or re.findall(pattern, text):
+    if re.findall(pattern, text) or len(text) <= 21:
         isSuccess, result = extract_end_dt_with_regex(text)
         if isSuccess:
             return result
