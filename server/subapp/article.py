@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from search_engine.meilisearch.articles import meilisearch_article_manager
+from search_engine.meilisearch.articles import MeiliSearchArticleManager
 from server.middleware.authentication import auth_middleware
 from server.model.body import SearchArticles
 from server.model.response import Response
@@ -8,6 +8,7 @@ from utilities import timeutil
 
 _subapp_article = FastAPI()
 _subapp_article.middleware('http')(auth_middleware)
+meilisearch_article_manager = MeiliSearchArticleManager()
 
 @_subapp_article.post("/all")
 async def search_articles(params: SearchArticles):

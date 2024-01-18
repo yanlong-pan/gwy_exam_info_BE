@@ -14,8 +14,9 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import NoSuchElementException
 from dateutil.relativedelta import relativedelta
 from crawlers import Crawler
+from db.mongodb.articles import UnicloudDBArticleManager
 from models.article import Article, ArticleManager
-from search_engine.meilisearch.articles import meilisearch_article_manager
+# from search_engine.meilisearch.articles import MeiliSearchArticleManager
 from utilities import Singleton, constant, flow, timeutil
 
 @Singleton
@@ -51,7 +52,8 @@ class GkldCrawler(Crawler):
         deadline = None
         try:
             job_info = driver.find_element(By.XPATH, '//div[@class="jobinfo-list"]//li[contains(., "报名时间")]')
-            deadline = timeutil.extract_end_datetime(job_info.text, collect_date_str)
+            res = timeutil.extract_end_datetime(job_info.text, collect_date_str)
+            deadline = res if res else re.sub(r"报名时间[：:]", '', job_info.text)
         except:
             pass
         return deadline
@@ -170,7 +172,8 @@ class GkldCrawler(Crawler):
                             totalPages = min(totalPages, 2)
                         # 处理每个分页
                         for j in range(1, totalPages + 1):
-                            self.process_province_page(meilisearch_article_manager, driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
+                            self.process_province_page(UnicloudDBArticleManager(), driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
+                            # self.process_province_page(MeiliSearchArticleManager(), driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
                             driver.switch_to.window(province_page)
                         
                 # 关闭新窗口并切换回原始窗口

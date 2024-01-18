@@ -69,5 +69,3 @@ class MeiliSearchArticleManager(ArticleManager, IndexManager):
     def insert_article(self, article: Article) -> None:
         if self.is_unique_article(article):
             self.index.add_documents(documents=[{**article.model_dump()}])
-
-meilisearch_article_manager = MeiliSearchArticleManager()
