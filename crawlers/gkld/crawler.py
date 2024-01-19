@@ -17,7 +17,8 @@ from crawlers import Crawler
 from db.mongodb.articles import UnicloudDBArticleManager
 from models.article import Article, ArticleManager
 # from search_engine.meilisearch.articles import MeiliSearchArticleManager
-from utilities import Singleton, constant, flow, timeutil
+from utilities import Singleton, constant, flow, loggers, timeutil
+from selenium.common.exceptions import NoSuchDriverException, WebDriverException
 
 @Singleton
 class GkldCrawler(Crawler):
@@ -115,7 +116,7 @@ class GkldCrawler(Crawler):
                 html_content=self.extract_article_content(driver)
             )
             article_manager.insert_article(article)
-                
+
         save_notices()
         # 关闭省份页面
         if driver.current_window_handle == province_page_with_pagination:
@@ -181,7 +182,11 @@ class GkldCrawler(Crawler):
                 driver.switch_to.window(homepage)
             
             iterate_over_all_provinces()
-
+        except NoSuchDriverException as e:
+            loggers.error_file_logger.error(f"{e.msg}, 重启爬虫...")
+            self.scrape_website()
+        except WebDriverException as e:
+            loggers.error_file_logger.error(f"{e.msg}")
         finally:
             driver.quit()
 
