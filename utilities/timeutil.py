@@ -44,7 +44,7 @@ def extract_end_dt_with_ai(text: str, collect_date_str: str) -> (bool, str):
     response = requests.get(os.getenv('UNI_APP_AI_CLOUD_URL'), params=params)
     if response.status_code == 200:
         dt = extract_end_dt_with_regex(response.text)
-        loggers.file_logger.debug(f"使用AI服务,原输入为'{text}',AI解析后为'{response.text}'")
+        loggers.debug_file_logger.debug(f"使用AI服务,原输入为'{text}',AI解析后为'{response.text}'")
         return dt
     else:
         return (False, text)
