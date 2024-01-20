@@ -56,9 +56,10 @@ def extract_end_datetime(text: str, collect_date_str: str, pattern: str = None):
     # 报名时间：2023-10-29 08:00至2023-11-07 18:00
     # 报名时间：2023-10-29至2023-11-07
     # 报名时间：2023-10-29 至 2023-11-07
-    # pattern = r"报名时间[：:](\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)(?:\s*至\s*)(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?)"
+    # pattern = r"报名时间[：:](\d{4}.\d{1,2}.\d{1,2}.+?(?:\s*\d{1,2}:\d{1,2})?)(?:\s*至\s*)(\d{4}.\d{1,2}.\d{1,2}.+?(?:\s*\d{1,2}:\d{1,2})?)"
+
     if not pattern:
-        pattern = r"报名时间[：:](\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{1,2})?)(?:\s*至\s*)(\d{4}-\d{1,2}-\d{1,2}(?:\s+\d{1,2}:\d{1,2})?)"
+        pattern = r"报名时间[：:](\d{4}.\d{1,2}.\d{1,2}.*?(?:\s*\d{1,2}:\d{1,2})?)(?:\s*至\s*)(\d{4}.\d{1,2}.\d{1,2}.*?(?:\s*\d{1,2}:\d{1,2})?)"
     text = text.replace('官方报名入口', '').strip()
     if re.findall(pattern, text) or len(text) <= 21:
         isSuccess, result = extract_end_dt_with_regex(text)
