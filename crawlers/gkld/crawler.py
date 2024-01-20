@@ -14,14 +14,18 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import NoSuchElementException
 from dateutil.relativedelta import relativedelta
 from crawlers import Crawler
+from crawlers.gkld import Trace
 from db.mongodb.articles import UnicloudDBArticleManager
 from models.article import Article, ArticleManager
 # from search_engine.meilisearch.articles import MeiliSearchArticleManager
 from utilities import Singleton, constant, flow, loggers, timeutil
-from selenium.common.exceptions import NoSuchDriverException, WebDriverException
+from selenium.common.exceptions import WebDriverException
 
 @Singleton
 class GkldCrawler(Crawler):
+    
+    def __init__(self, trace: Trace):
+        self.trace = trace
 
     def extract_article_title(self, driver: webdriver.Chrome):
         h1_element = driver.find_element(By.XPATH, './/div[@class="article-title"]/h1')
@@ -38,7 +42,7 @@ class GkldCrawler(Crawler):
         date_time: datetime = dateparser.parse(date_str) if '前' in date_str else datetime.strptime(date_str, constant.HYPHEN_JOINED_DATE_FORMAT)
         # 检查
         if start_dt.tzinfo.zone == end_dt.tzinfo.zone == timeutil.get_tz().zone:
-            is_within_range = start_dt <= timeutil.localize_native_dt(date_time)<= end_dt
+            is_within_range = start_dt <= timeutil.localize_native_dt(date_time) <= end_dt
             return not is_within_range
         else:
             raise Exception('Inconsistent TZ')
@@ -102,20 +106,25 @@ class GkldCrawler(Crawler):
             initial_page = province_page_with_pagination,
         )
         def save_notices():
-            article_title = self.extract_article_title(driver).replace('/', '|')
-            collect_date_str = self.extract_collect_date(driver)
-            article = Article(
-                id=str(uuid.uuid4()),
-                title=article_title,
-                province=province_name,
-                exam_type=exam_type,
-                info_type=info_type,
-                # set the parsed time to local timezone and then convert it to UTC timestamp
-                collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
-                apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
-                html_content=self.extract_article_content(driver)
-            )
-            article_manager.insert_article(article)
+            try:
+                article_title = self.extract_article_title(driver).replace('/', '|')
+                collect_date_str = self.extract_collect_date(driver)
+                article = Article(
+                    id=str(uuid.uuid4()),
+                    title=article_title,
+                    province=province_name,
+                    exam_type=exam_type,
+                    info_type=info_type,
+                    # set the parsed time to local timezone and then convert it to UTC timestamp
+                    collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
+                    apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
+                    html_content=self.extract_article_content(driver)
+                )
+                article_manager.insert_article(article)
+                loggers.debug_file_logger.debug(f"Inserted article with title being {article_title}")
+            # 页面采集失败，可能是404页面，也可能是非标准结构
+            except NoSuchElementException as e:
+                loggers.error_file_logger.error(f"URL: {driver.current_url} - {e.msg}")
 
         save_notices()
         # 关闭省份页面
@@ -125,11 +134,22 @@ class GkldCrawler(Crawler):
     def scrape_website(self):
         driver = self._create_chrome_web_driver(headless=os.getenv('HEADLESS_MODE'))
 
+        def _find_checkbox(i_class, text):
+            return driver.find_element(By.XPATH, f'//i[contains(@class, "{i_class}")]/following-sibling::a[contains(text(), "{text}")]')
+            
         def _click_checkbox(text, checked=False, interval=3):
-            i_class = 'icon-oncheck' if checked else 'icon-check'
-            driver.find_element(By.XPATH, f'//i[contains(@class, "{i_class}")]/following-sibling::a[contains(text(), "{text}")]').click()
-            time.sleep(interval)
-        
+            # checked: False 代表当前应当处于未点击状态，将执行tick操作， True代表当前应当处于已被点击状态，将执行untick操作
+            try:
+                checkbox = _find_checkbox('icon-oncheck' if checked else 'icon-check', text)
+                checkbox.click()
+                time.sleep(interval)
+            except NoSuchElementException as e1:
+                try:
+                    _find_checkbox('icon-check' if checked else 'icon-oncheck', text)
+                    loggers.debug_file_logger.debug(f'选项框 {text} 已经处于{"未" if checked else "已被"}点击状态， 无需额外操作')
+                except Exception as e2:
+                    loggers.error_file_logger.error(f'选项框 {text} 找不到, {e2.msg}')            
+
         try:
             driver.get('https://www.gongkaoleida.com/')
             homepage = driver.current_window_handle
@@ -138,7 +158,8 @@ class GkldCrawler(Crawler):
             # Iterate over all the provinces
             @flow.iterate_over_web_elements(
                 driver = driver,
-                selector_value = '.province-name'
+                selector_value = '.province-name',
+                filter = lambda e: e.text not in self.trace.province if self.trace.scrape_times > 1 else True # 重启后略过已经爬过的省份
             )
             def iterate_over_all_provinces(web_element: WebElement):
                 province_name = web_element.text
@@ -153,14 +174,34 @@ class GkldCrawler(Crawler):
                 num_of_exam_types = len(exam_types)
 
                 for a_i in range(num_of_info_types):
-                    _click_checkbox(info_types[a_i])
+                    current_info_type = info_types[a_i]
+                    if self.trace.scrape_times > 1 and self.trace.info_type and a_i < info_types.index(self.trace.info_type):
+                        loggers.debug_file_logger.debug(f"跳过资讯类型: {current_info_type}")
+                        continue
+                    else:
+                        # 记录 info_type
+                        self.trace.info_type = current_info_type
+
+                    _click_checkbox(current_info_type)
+                    # 取消勾选上个循环遗留下的checkboxes
                     if a_i > 0:
                         _click_checkbox(exam_types[-1], checked=True)
                         _click_checkbox(info_types[a_i-1], checked=True)
 
                     for i in range(num_of_exam_types):
-                        _click_checkbox(exam_types[i])
-                        
+                        current_exam_type = exam_types[i]
+                        if self.trace.scrape_times > 1 and self.trace.exam_type and i < exam_types.index(self.trace.exam_type):
+                            loggers.debug_file_logger.debug(f"跳过考试类型: {current_exam_type}")
+                            continue
+                        else:
+                            # 记录 exam_type
+                            self.trace.exam_type = current_exam_type
+                            # 重置 exam_type 以防止下个info_type循环跳过最后一个exam_type之前的所有exam_type
+                            if i == num_of_exam_types - 1:
+                                self.trace.exam_type = ''
+
+                        _click_checkbox(current_exam_type)
+                        # 取消勾选上个循环遗留下的checkbox
                         if i > 0:
                             _click_checkbox(exam_types[i-1], checked=True)
 
@@ -170,26 +211,32 @@ class GkldCrawler(Crawler):
                         except NoSuchElementException:
                             totalPages = 1
                         if os.getenv('RUNNING_ENV') == constant.TEST_ENV:
-                            totalPages = min(totalPages, 2)
+                            totalPages = min(totalPages, 3)
                         # 处理每个分页
                         for j in range(1, totalPages + 1):
-                            self.process_province_page(UnicloudDBArticleManager(), driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
-                            # self.process_province_page(MeiliSearchArticleManager(), driver, province_name, exam_types[i], info_types[a_i], j, end_dt)
+                            self.process_province_page(UnicloudDBArticleManager(), driver, province_name, current_exam_type, current_info_type, j, end_dt)
                             driver.switch_to.window(province_page)
-                        
+
+                # 记录已经爬过的省份
+                self.trace.province.add(province_name)
                 # 关闭新窗口并切换回原始窗口
                 driver.close()
                 driver.switch_to.window(homepage)
             
             iterate_over_all_provinces()
-        except NoSuchDriverException as e:
-            loggers.error_file_logger.error(f"{e.msg}, 重启爬虫...")
-            self.scrape_website()
+            loggers.debug_file_logger.debug("成功完成本次爬取任务!")
         except WebDriverException as e:
-            loggers.error_file_logger.error(f"{e.msg}")
+            if self.trace.scrape_times <= 3 and "no such execution context" in e.msg:
+                self.trace.scrape_times += 1
+                loggers.error_file_logger.error(f"{e}, 即将开始第{self.trace.scrape_times}次爬取..., 当前trace: {self.trace}")
+                self.scrape_website()
+            else:
+                loggers.error_file_logger.error(f"{e.msg}, 当前trace: {self.trace}, 异常退出")
         finally:
             driver.quit()
 
 if __name__ == "__main__":
     load_dotenv()
-    GkldCrawler().scrape_website()
+    # trace = Trace(province={'国家', '安徽'}, exam_type='银行', info_type='招考公告', scrape_times=2)
+    trace = Trace()
+    GkldCrawler(trace).scrape_website()
