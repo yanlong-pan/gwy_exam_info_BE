@@ -121,7 +121,7 @@ class GkldCrawler(Crawler):
                     html_content=self.extract_article_content(driver)
                 )
                 article_manager.insert_article(article)
-                loggers.debug_file_logger.debug(f"Inserted article with title being {article_title}")
+                loggers.debug_file_logger.debug(f"尝试添加《{article_title}》")
             # 页面采集失败，可能是404页面，也可能是非标准结构
             except NoSuchElementException as e:
                 loggers.error_file_logger.error(f"URL: {driver.current_url} - {e.msg}")
