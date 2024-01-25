@@ -63,6 +63,20 @@ class GkldCrawler(Crawler):
             pass
         return deadline
 
+    def replace_sensitive_text(self, input_text):
+        # 定义替换规则
+        replacements = {
+            r'公考雷达': os.getenv('APP_NAME', '公考营地'),
+        }
+
+        # 生成正则表达式模式
+        pattern = re.compile('|'.join(re.escape(key) for key in replacements.keys()))
+
+        # 使用正则表达式替换文本
+        output_text = pattern.sub(lambda x: replacements[x.group(0)], input_text)
+
+        return output_text
+
     def extract_article_content(self, driver: webdriver.Chrome):
         def _should_remove(tag):
             if '公考雷达' in tag.text:
@@ -76,12 +90,13 @@ class GkldCrawler(Crawler):
         content = article.get_attribute('innerHTML')
         soup = BeautifulSoup(content, 'html.parser')
 
-        # 找到包含 "公考雷达" 字样的p元素并移除
+        # 过滤
         elements_to_remove = soup.find_all(_should_remove)
         for element in elements_to_remove:
             element.extract()
 
-        content = str(soup)
+        # 替换敏感信息
+        content = self.replace_sensitive_text(str(soup))
         return content
 
     def process_province_page(self, article_manager: ArticleManager, driver: webdriver.Chrome, province_name, exam_type, info_type, page_num, end_dt: datetime):
