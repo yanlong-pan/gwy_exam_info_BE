@@ -5,3 +5,4 @@ class Trace(BaseModel):
     exam_type: str = ''
     info_type: str = ''
     scrape_times: int = 1
+    scraped_articles: int = 0
