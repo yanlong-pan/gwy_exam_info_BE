@@ -63,9 +63,8 @@ class MeiliSearchArticleManager(ArticleManager, IndexManager):
         )
         return r['hits'] if r['hits'] else None
 
-    def is_unique_article(self, article: Article) -> bool:
-        return self.index.get_documents({'filter': [f'title="{article.title}"']}).total == 0
+    def check_article_existence_by_title(self, article_title: str) -> bool:
+        return self.index.get_documents({'filter': [f'title="{article_title}"']}).total == 0
     
     def insert_article(self, article: Article) -> None:
-        if self.is_unique_article(article):
-            self.index.add_documents(documents=[{**article.model_dump()}])
+        self.index.add_documents(documents=[{**article.model_dump()}])

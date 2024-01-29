@@ -14,7 +14,11 @@ class Article(BaseModel):
     html_content: str
 
 class ArticleManager(ABC):
-    
+
+    @abstractmethod
+    def check_article_existence_by_title(self, article_title: str) -> bool:
+        pass    
+
     @abstractmethod
     def insert_article(self, article: Article) -> None:
         pass

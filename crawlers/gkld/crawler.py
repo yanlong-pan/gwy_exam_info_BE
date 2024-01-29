@@ -123,20 +123,21 @@ class GkldCrawler(Crawler):
         def save_notices():
             try:
                 article_title = self.extract_article_title(driver).replace('/', '|')
-                collect_date_str = self.extract_collect_date(driver)
-                article = Article(
-                    id=str(uuid.uuid4()),
-                    title=article_title,
-                    province=province_name,
-                    exam_type=exam_type,
-                    info_type=info_type,
-                    # set the parsed time to local timezone and then convert it to UTC timestamp
-                    collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
-                    apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
-                    html_content=self.extract_article_content(driver)
-                )
-                article_manager.insert_article(article)
-                loggers.debug_file_logger.debug(f"尝试添加《{article_title}》")
+                if article_manager.check_article_existence_by_title(article_title):
+                    collect_date_str = self.extract_collect_date(driver)
+                    article = Article(
+                        id=str(uuid.uuid4()),
+                        title=article_title,
+                        province=province_name,
+                        exam_type=exam_type,
+                        info_type=info_type,
+                        # set the parsed time to local timezone and then convert it to UTC timestamp
+                        collect_date=timeutil.local_dt_str_to_utc_ts(collect_date_str),
+                        apply_deadline=self.extract_apply_deadline(driver, collect_date_str),
+                        html_content=self.extract_article_content(driver)
+                    )
+                    article_manager.insert_article(article)
+                    self.trace.scraped_articles += 1
             # 页面采集失败，可能是404页面，也可能是非标准结构
             except NoSuchElementException as e:
                 loggers.error_file_logger.error(f"URL: {driver.current_url} - {e.msg}")
@@ -239,7 +240,7 @@ class GkldCrawler(Crawler):
                 driver.switch_to.window(homepage)
             
             iterate_over_all_provinces()
-            loggers.debug_file_logger.debug("成功完成本次爬取任务!")
+            loggers.debug_file_logger.debug(f"成功完成本次爬取任务! 总共爬取了{self.trace.scrape_times}个文章")
         except WebDriverException as e:
             if self.trace.scrape_times <= 3 and "no such execution context" in e.msg:
                 self.trace.scrape_times += 1
@@ -247,6 +248,8 @@ class GkldCrawler(Crawler):
                 self.scrape_website()
             else:
                 loggers.error_file_logger.error(f"{e.msg}, 当前trace: {self.trace}, 异常退出")
+        except Exception as e:
+            loggers.error_file_logger.error(f"{e.msg}, 当前trace: {self.trace}, 异常退出")
         finally:
             driver.quit()
 
