@@ -11,14 +11,11 @@ from utilities import Singleton, loggers, timeutil
 class UnicloudDBArticleManager(ArticleManager):
 
     def check_article_existence_by_title(self, article_title) -> bool:
-        check_res = requests.get(os.getenv('UNI_APP_CLOUD_DB_CHECK_ARTICLE_EXISTENCE'), params={'article_title': article_title})
+        check_res = requests.get(os.getenv('UNI_APP_CLOUD_DB_SEARCH'), params={'query': f'title=="{article_title}"'})
         if check_res.status_code == 200:
             data = json.loads(check_res.text)
-            if data['success']:
-                return True
-            else:
-                loggers.debug_file_logger.debug(data['data']['message'])
-                return False
+            not_found = data['affectedDocs'] == 0
+            return not_found
 
     def insert_article(self, article: Article) -> None:
         insert_res = requests.post(os.getenv('UNI_APP_CLOUD_DB_INSERT_ARTICLE_URL'), json=article.model_dump())
